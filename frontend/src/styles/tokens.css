@@ -1,0 +1,28 @@
+/* AO MARKET — tokens de identidade visual
+   Paleta: verde profundo (marca), dourado/âmbar (destaque, uso restrito),
+   creme (fundo), carvão (texto), branco. ~80% neutros, ~15% marca, ~5% destaque. */
+
+:root {
+  --am-forest: #17392B;
+  --am-forest-dark: #0F2A1F;
+  --am-forest-tint: #E7EDE7;
+
+  --am-amber: #B8862E;
+  --am-amber-dark: #97701F;
+
+  --am-cream: #F6F2EA;
+  --am-cream-alt: #EFE9DC;
+
+  --am-ink: #211D18;
+  --am-ink-muted: #5B5347;
+
+  --am-white: #FFFFFF;
+  --am-line: #DDD5C6;
+  --am-line-dark: rgba(246, 242, 234, 0.22);
+
+  --am-font-display: 'Manrope', 'Segoe UI', sans-serif;
+  --am-font-body: 'Inter', 'Segoe UI', sans-serif;
+
+  --am-radius: 3px;
+  --am-container: 1180px;
+}
