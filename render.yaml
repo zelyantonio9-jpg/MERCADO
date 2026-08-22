@@ -1,24 +1,31 @@
 # Configuração do Render para o AO MARKET (Blueprint / Infrastructure as Code).
 #
+# A base de dados está no Supabase (não no Render) — por isso este ficheiro
+# NÃO provisiona um Postgres gerido pelo Render. DATABASE_URL é preenchido
+# manualmente no dashboard com a connection string do Supabase (ver
+# instruções abaixo, "sync: false" faz o Render pedir o valor em vez de o
+# tentar gerar/ligar sozinho).
+#
 # Como usar:
 #   1. Faz commit deste ficheiro na raiz do repositório.
 #   2. No Render: New → Blueprint → seleciona este repositório.
-#   3. O Render cria os 3 serviços abaixo de uma vez (base de dados,
-#      backend, frontend), já ligados entre si.
-#   4. Depois do PRIMEIRO deploy, atualiza FRONTEND_URL e VITE_API_URL
-#      manualmente com os domínios reais gerados pelo Render (ver nota
-#      mais abaixo — é um problema de "ovo e galinha": os domínios só
-#      existem depois de os serviços serem criados) e volta a fazer deploy.
+#   3. O Render cria os 2 serviços abaixo (backend, frontend).
+#   4. Preenche manualmente no dashboard (Environment) os valores marcados
+#      com "sync: false": DATABASE_URL (Supabase) e, depois do primeiro
+#      deploy, FRONTEND_URL/VITE_API_URL (domínios reais gerados pelo
+#      Render — só existem depois de os serviços serem criados).
+#
+# Onde ir buscar o DATABASE_URL no Supabase:
+#   Project Settings → Database → Connection string → separador "URI"
+#   → escolhe "Connection pooling: OFF" (ligação direta, porta 5432) —
+#   o Render corre um único processo persistente, não precisa do pgbouncer
+#   que o Supabase recomenda para ambientes serverless.
+#   Substitui [YOUR-PASSWORD] pela password da base de dados (Settings →
+#   Database → Database password — não é a tua password de login do Supabase).
 #
 # Se preferires configurar os serviços à mão no dashboard em vez de usar
 # Blueprint, usa este ficheiro como referência dos valores a colocar em
 # cada campo — a estrutura é a mesma.
-
-databases:
-  - name: ao-market-db
-    plan: free
-    region: oregon
-    postgresMajorVersion: 16
 
 services:
   # --- Backend (API) ---
@@ -38,10 +45,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Connection string do Supabase (ligação direta, porta 5432).
+      # sync: false = o Render não tenta preencher sozinho; pede-te o
+      # valor no dashboard depois de criar o serviço.
       - key: DATABASE_URL
-        fromDatabase:
-          name: ao-market-db
-          property: connectionString
+        sync: false
       # Gerados automaticamente pelo Render — strings aleatórias fortes,
       # nunca precisas de as escrever à mão nem de as saber.
       - key: JWT_SECRET
