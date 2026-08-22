@@ -89,6 +89,18 @@ export async function refresh(req, res, next) {
   }
 }
 
+// GET /api/auth/me — protegida por requireAuth (ver auth.routes.js).
+// req.user.id vem do JWT já validado; os dados devolvidos vêm sempre de
+// uma consulta fresca à base de dados (ver authService.getCurrentUser).
+export async function me(req, res, next) {
+  try {
+    const user = await authService.getCurrentUser(req.user.id);
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function logout(req, res, next) {
   try {
     const rawRefreshToken = req.cookies?.[REFRESH_COOKIE_NAME];

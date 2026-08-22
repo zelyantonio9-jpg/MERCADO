@@ -1,4 +1,4 @@
-// AO MARKET â€” Schema inicial (Fase 1)
+// AO MARKET — Schema inicial (Fase 1)
 // Base de dados: PostgreSQL
 // ORM: Prisma
 
@@ -8,7 +8,14 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url       = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
+  // Nota: existe um DIRECT_URL configurado no ambiente (ligação direta,
+  // porta 5432, sem pgbouncer) que não está ligado aqui de propósito.
+  // Adicionar "directUrl = env(\"DIRECT_URL\")" só é seguro depois de
+  // confirmar que DIRECT_URL está definido nas variáveis de ambiente do
+  // Render — caso contrário "prisma generate" (que corre no postinstall
+  // do build) falha por variável em falta e derruba o deploy inteiro.
+  // Ver docs/DEPLOY-SUPABASE-BASELINE.md antes de ativar isto.
 }
 
 // ==================================================
@@ -112,12 +119,12 @@ enum ApprovalStatus {
   NOT_REQUIRED
 }
 
-// Refresh tokens sÃ£o opacos (nÃ£o JWT): um valor aleatÃ³rio Ã© devolvido ao
-// cliente num cookie httpOnly, e sÃ³ o HASH dele Ã© guardado aqui â€” mesmo
-// que a base de dados seja comprometida, o valor em si nÃ£o Ã© recuperÃ¡vel.
-// Cada refresh roda o token (o antigo Ã© revogado, um novo Ã© emitido);
-// reutilizar um token jÃ¡ revogado Ã© tratado como sinal de roubo e revoga
-// toda a famÃ­lia (ver SocialSecurityService... nÃ£o, ver auth.service.js).
+// Refresh tokens são opacos (não JWT): um valor aleatório é devolvido ao
+// cliente num cookie httpOnly, e só o HASH dele é guardado aqui — mesmo
+// que a base de dados seja comprometida, o valor em si não é recuperável.
+// Cada refresh roda o token (o antigo é revogado, um novo é emitido);
+// reutilizar um token já revogado é tratado como sinal de roubo e revoga
+// toda a família (ver SocialSecurityService... não, ver auth.service.js).
 model RefreshToken {
   id        String    @id @default(uuid())
   userId    String
@@ -136,26 +143,26 @@ model RefreshToken {
   @@index([expiresAt])
 }
 
-// --- SeguranÃ§a Social (mÃ³dulo INSS) ---
+// --- Segurança Social (módulo INSS) ---
 // Estes estados representam o percurso de uma pessoa/empresa perante o
-// mÃ³dulo, e nunca significam "verificado junto do INSS" por si sÃ³.
+// módulo, e nunca significam "verificado junto do INSS" por si só.
 enum SocialSecurityStatus {
-  NOT_REGISTERED       // utilizador ainda nÃ£o respondeu/nÃ£o aplicÃ¡vel
-  DECLARED              // utilizador declarou que estÃ¡ inscrito, sem prova
+  NOT_REGISTERED       // utilizador ainda não respondeu/não aplicável
+  DECLARED              // utilizador declarou que está inscrito, sem prova
   DOCUMENTS_PENDING     // aguarda envio de documentos
-  PENDING_VERIFICATION  // documentos enviados, aguarda anÃ¡lise
-  VERIFIED               // verificado (documental ou oficialmente â€” ver verificationLevel)
+  PENDING_VERIFICATION  // documentos enviados, aguarda análise
+  VERIFIED               // verificado (documental ou oficialmente — ver verificationLevel)
   REJECTED
   EXPIRED
   SUSPENDED
 }
 
-// Distingue a NATUREZA da verificaÃ§Ã£o â€” nunca mostrar "verificado junto do
-// INSS" a nÃ£o ser que verificationLevel seja OFFICIAL_VERIFIED.
+// Distingue a NATUREZA da verificação — nunca mostrar "verificado junto do
+// INSS" a não ser que verificationLevel seja OFFICIAL_VERIFIED.
 enum SocialSecurityVerificationLevel {
-  DECLARED           // "InformaÃ§Ã£o declarada" â€” nÃ­vel 1
-  DOCUMENT_VERIFIED  // "Verificado documentalmente pelo AO MARKET" â€” nÃ­vel 2
-  OFFICIAL_VERIFIED  // "Verificado junto do INSS" â€” nÃ­vel 3, sÃ³ com integraÃ§Ã£o oficial
+  DECLARED           // "Informação declarada" — nível 1
+  DOCUMENT_VERIFIED  // "Verificado documentalmente pelo AO MARKET" — nível 2
+  OFFICIAL_VERIFIED  // "Verificado junto do INSS" — nível 3, só com integração oficial
 }
 
 enum SocialSecurityDocumentStatus {
@@ -177,7 +184,7 @@ enum SocialSecurityEventType {
 }
 
 // ==================================================
-// UTILIZADORES, PAPÃ‰IS E PERMISSÃ•ES (RBAC)
+// UTILIZADORES, PAPÉIS E PERMISSÕES (RBAC)
 // ==================================================
 
 model User {
@@ -319,7 +326,7 @@ model Vehicle {
   id            String   @id @default(uuid())
   transporterId String
   plate         String
-  type          String // ex: camiÃ£o, carrinha, moto
+  type          String // ex: camião, carrinha, moto
   capacityKg    Decimal? @db.Decimal(10, 2)
   createdAt     DateTime @default(now())
 
@@ -346,7 +353,7 @@ model Company {
   legalRepName    String?
   legalRepBi      String?
   capabilities    CompanyCapability[] @default([])
-  approvalRules   Json? // regras configurÃ¡veis de aprovaÃ§Ã£o (limites por valor)
+  approvalRules   Json? // regras configuráveis de aprovação (limites por valor)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -375,13 +382,13 @@ model CompanyMembership {
 }
 
 // ==================================================
-// ENDEREÃ‡OS
+// ENDEREÇOS
 // ==================================================
 
 model Address {
   id                String   @id @default(uuid())
   userId            String
-  label             String // Casa, EscritÃ³rio, Loja, ArmazÃ©m...
+  label             String // Casa, Escritório, Loja, Armazém...
   province          String
   municipality      String
   commune           String?
@@ -405,7 +412,7 @@ model Address {
 }
 
 // ==================================================
-// CATÃLOGO
+// CATÁLOGO
 // ==================================================
 
 model Category {
@@ -460,8 +467,8 @@ model Inventory {
 
 model Cart {
   id        String     @id @default(uuid())
-  // Um carrinho por utilizador â€” sem isto nada impedia duplicados, e a
-  // aplicaÃ§Ã£o teria de escolher arbitrariamente qual usar em cada pedido.
+  // Um carrinho por utilizador — sem isto nada impedia duplicados, e a
+  // aplicação teria de escolher arbitrariamente qual usar em cada pedido.
   userId    String     @unique
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
@@ -535,7 +542,7 @@ model OrderStatusHistory {
   id        String      @id @default(uuid())
   orderId   String
   status    OrderStatus
-  changedBy String? // userId de quem efetuou a transiÃ§Ã£o
+  changedBy String? // userId de quem efetuou a transição
   note      String?
   createdAt DateTime    @default(now())
 
@@ -545,7 +552,7 @@ model OrderStatusHistory {
 }
 
 // ==================================================
-// APROVAÃ‡ÃƒO EMPRESARIAL
+// APROVAÇÃO EMPRESARIAL
 // ==================================================
 
 model PurchaseApproval {
@@ -572,8 +579,8 @@ model PurchaseApproval {
 model Payment {
   id          String        @id @default(uuid())
   orderId     String        @unique
-  provider    String? // nome do provedor (abstraÃ­do pelo PaymentService)
-  providerRef String? // referÃªncia externa da transaÃ§Ã£o
+  provider    String? // nome do provedor (abstraído pelo PaymentService)
+  providerRef String? // referência externa da transação
   status      PaymentStatus @default(PENDING)
   amount      Decimal       @db.Decimal(12, 2)
   createdAt   DateTime      @default(now())
@@ -697,7 +704,7 @@ model Message {
 }
 
 // ==================================================
-// AVALIAÃ‡Ã•ES E FAVORITOS
+// AVALIAÇÕES E FAVORITOS
 // ==================================================
 
 model Review {
@@ -761,7 +768,7 @@ model RecurringPurchase {
 }
 
 // ==================================================
-// NOTIFICAÃ‡Ã•ES
+// NOTIFICAÇÕES
 // ==================================================
 
 model Notification {
@@ -799,17 +806,17 @@ model SupportTicket {
 }
 
 // ==================================================
-// SEGURANÃ‡A SOCIAL (MÃ“DULO INSS)
+// SEGURANÇA SOCIAL (MÓDULO INSS)
 // ==================================================
-// O AO MARKET nÃ£o Ã© o INSS: este mÃ³dulo recolhe dados autorizados, organiza
-// documentaÃ§Ã£o e regista o estado de verificaÃ§Ã£o. "VERIFIED" com
-// verificationLevel = OFFICIAL_VERIFIED sÃ³ pode resultar de uma integraÃ§Ã£o
+// O AO MARKET não é o INSS: este módulo recolhe dados autorizados, organiza
+// documentação e regista o estado de verificação. "VERIFIED" com
+// verificationLevel = OFFICIAL_VERIFIED só pode resultar de uma integração
 // oficial futura (ver INSSProvider, docs/INSS-INTEGRATION.md). Enquanto essa
-// integraÃ§Ã£o nÃ£o existir, o nÃ­vel mÃ¡ximo alcanÃ§Ã¡vel Ã© DOCUMENT_VERIFIED.
+// integração não existir, o nível máximo alcançável é DOCUMENT_VERIFIED.
 //
-// O perfil pertence a um User (produtor, trabalhador por conta prÃ³pria,
+// O perfil pertence a um User (produtor, trabalhador por conta própria,
 // transportador, trabalhador de empresa) OU a uma Company (contribuinte),
-// nunca aos dois â€” validado na camada de serviÃ§o (Prisma nÃ£o impÃµe XOR
+// nunca aos dois — validado na camada de serviço (Prisma não impõe XOR
 // nativamente; a migration adiciona um CHECK constraint em SQL puro).
 
 model SocialSecurityProfile {
@@ -817,18 +824,18 @@ model SocialSecurityProfile {
   userId String? @unique
   companyId String? @unique
 
-  // NISS nunca Ã© guardado em texto simples: nissEncrypted Ã© cifrado
-  // (AES-256-GCM) e nissLast4 guarda apenas os Ãºltimos dÃ­gitos para
-  // permitir exibiÃ§Ã£o mascarada sem decifrar em cada pedido.
+  // NISS nunca é guardado em texto simples: nissEncrypted é cifrado
+  // (AES-256-GCM) e nissLast4 guarda apenas os últimos dígitos para
+  // permitir exibição mascarada sem decifrar em cada pedido.
   nissEncrypted String?
   nissLast4     String?
 
-  // Resposta a "EstÃ¡ inscrito no INSS?": true = sim, false = nÃ£o,
-  // null = "nÃ£o sei" / "prefiro informar mais tarde".
+  // Resposta a "Está inscrito no INSS?": true = sim, false = não,
+  // null = "não sei" / "prefiro informar mais tarde".
   declaredEnrolled Boolean?
 
-  // Categoria/regime e atividade â€” texto livre e configurÃ¡vel.
-  // NÃ£o codificar aqui requisitos legais especÃ­ficos.
+  // Categoria/regime e atividade — texto livre e configurável.
+  // Não codificar aqui requisitos legais específicos.
   category String?
   activity String?
 
@@ -854,9 +861,9 @@ model SocialSecurityDocument {
   id        String @id @default(uuid())
   profileId String
 
-  // Tipo de documento â€” texto configurÃ¡vel (ex: "declaracao_inss",
-  // "comprovativo_contribuicoes"), definido fora do cÃ³digo para poder
-  // ser atualizado conforme orientaÃ§Ã£o oficial do INSS sem deploy.
+  // Tipo de documento — texto configurável (ex: "declaracao_inss",
+  // "comprovativo_contribuicoes"), definido fora do código para poder
+  // ser atualizado conforme orientação oficial do INSS sem deploy.
   type   String
   fileUrl String
 
@@ -867,7 +874,7 @@ model SocialSecurityDocument {
 
   uploadedBy String // userId de quem carregou o documento
 
-  // SÃ³ preenchido por uma verificaÃ§Ã£o documental (nÃ­vel 2). O utilizador
+  // Só preenchido por uma verificação documental (nível 2). O utilizador
   // nunca pode escrever diretamente nestes campos.
   reviewedBy      String?
   reviewedAt      DateTime?
@@ -883,9 +890,9 @@ model SocialSecurityDocument {
   @@index([validUntil])
 }
 
-// Registo formal de cada verificaÃ§Ã£o executada (nÃ­vel 2 documental ou
-// nÃ­vel 3 oficial). Distinto do log de eventos: aqui sÃ³ entram decisÃµes
-// reais de verificaÃ§Ã£o, nÃ£o qualquer interaÃ§Ã£o.
+// Registo formal de cada verificação executada (nível 2 documental ou
+// nível 3 oficial). Distinto do log de eventos: aqui só entram decisões
+// reais de verificação, não qualquer interação.
 model SocialSecurityVerification {
   id        String @id @default(uuid())
   profileId String
@@ -893,8 +900,8 @@ model SocialSecurityVerification {
   level  SocialSecurityVerificationLevel
   result SocialSecurityStatus // tipicamente VERIFIED ou REJECTED
 
-  // null quando o resultado vier de um provider oficial automÃ¡tico;
-  // preenchido com o userId do operador quando for verificaÃ§Ã£o manual.
+  // null quando o resultado vier de um provider oficial automático;
+  // preenchido com o userId do operador quando for verificação manual.
   performedBy String?
 
   // Identifica a origem: "MANUAL" (operador AO MARKET) ou o nome do
@@ -909,15 +916,15 @@ model SocialSecurityVerification {
   @@index([profileId])
 }
 
-// HistÃ³rico detalhado de todos os eventos do mÃ³dulo (declaraÃ§Ã£o, upload,
-// verificaÃ§Ã£o, rejeiÃ§Ã£o, expiraÃ§Ã£o, mudanÃ§a de estado) â€” complementa o
-// AuditLog genÃ©rico com o contexto especÃ­fico deste domÃ­nio.
+// Histórico detalhado de todos os eventos do módulo (declaração, upload,
+// verificação, rejeição, expiração, mudança de estado) — complementa o
+// AuditLog genérico com o contexto específico deste domínio.
 model SocialSecurityVerificationEvent {
   id        String @id @default(uuid())
   profileId String
 
   eventType SocialSecurityEventType
-  actorId   String? // userId de quem despoletou o evento; null se automÃ¡tico
+  actorId   String? // userId de quem despoletou o evento; null se automático
   metadata  Json?   // nunca deve conter o NISS em texto simples
 
   createdAt DateTime @default(now())

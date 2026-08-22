@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { validateBody } from '../utils/validate.js';
 import { authLimiter, refreshLimiter } from '../middlewares/rateLimiters.js';
+import { requireAuth } from '../middlewares/auth.js';
 import * as authController from '../controllers/auth.controller.js';
 
 const router = Router();
@@ -56,5 +57,9 @@ router.post('/refresh', refreshLimiter, authController.refresh);
 
 // Revoga a sessão atual (este dispositivo apenas).
 router.post('/logout', authController.logout);
+
+// Dados do utilizador autenticado. Exige um access token válido
+// (Authorization: Bearer ...) — nunca lê nada do cookie do refresh token.
+router.get('/me', requireAuth, authController.me);
 
 export default router;

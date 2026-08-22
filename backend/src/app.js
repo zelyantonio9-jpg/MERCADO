@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -16,15 +16,15 @@ import socialSecurityAdminRoutes from './routes/admin/socialSecurityAdmin.routes
 
 export const app = express();
 
-// Cada pedido recebe um id (prÃ³prio ou herdado de x-request-id) antes de
-// tudo o resto, para poder ser seguido nos logs do inÃ­cio ao fim.
+// Cada pedido recebe um id (próprio ou herdado de x-request-id) antes de
+// tudo o resto, para poder ser seguido nos logs do início ao fim.
 app.use(requestIdMiddleware);
 
-// SeguranÃ§a bÃ¡sica de headers HTTP.
+// Segurança básica de headers HTTP.
 app.use(helmet());
 
-// CORS restrito Ã  origem do frontend configurada em .env. `credentials:
-// true` Ã© necessÃ¡rio para o cookie httpOnly do refresh token viajar em
+// CORS restrito à origem do frontend configurada em .env. `credentials:
+// true` é necessário para o cookie httpOnly do refresh token viajar em
 // pedidos cross-origin (frontend em porta diferente do backend em dev).
 app.use(
   cors({
@@ -40,9 +40,9 @@ if (env.nodeEnv === 'development') {
   app.use(morgan('dev'));
 }
 
-// Rate limiting global â€” protege contra abuso genÃ©rico. As rotas de
-// autenticaÃ§Ã£o (login/registo/refresh) tÃªm limites dedicados e mais
-// apertados em auth.routes.js, porque sÃ£o o alvo Ã³bvio de forÃ§a bruta.
+// Rate limiting global — protege contra abuso genérico. As rotas de
+// autenticação (login/registo/refresh) têm limites dedicados e mais
+// apertados em auth.routes.js, porque são o alvo óbvio de força bruta.
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,

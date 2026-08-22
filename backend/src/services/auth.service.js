@@ -174,6 +174,25 @@ export async function login({ email, password }, { ip } = {}) {
   return { user: toAuthResponseUser(user), ...tokens };
 }
 
+// GET /api/auth/me — devolve os dados atuais do utilizador autenticado.
+// req.user (populado por requireAuth a partir do JWT) só tem id/roles/
+// permissions/companyId; aqui vai-se sempre à base de dados buscar o
+// estado real (fullName, email, status, etc.), nunca confiando em dados
+// do próprio token para além do id — o token pode estar desatualizado
+// (ex: role mudou depois de emitido) mas ainda válido até expirar.
+export async function getCurrentUser(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: USER_AUTH_INCLUDE });
+
+  if (!user) {
+    throw new AppError('Utilizador não encontrado.', 404);
+  }
+  if (user.status === 'SUSPENDED' || user.status === 'BLOCKED') {
+    throw new AppError('Esta conta está suspensa. Contacte o suporte.', 403);
+  }
+
+  return toAuthResponseUser(user);
+}
+
 // Chamado pelo frontend automaticamente (ex: ao abrir a app) para trocar
 // um refresh token válido por um novo access token — sem pedir a
 // palavra-passe outra vez. Roda o refresh token a cada uso: o antigo é
