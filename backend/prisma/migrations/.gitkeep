@@ -1,0 +1,10 @@
+Esta pasta está vazia de propósito até correres:
+
+    npx prisma migrate dev --name init
+
+contra uma base de dados Postgres real com rede disponível (não é
+possível gerar migrations num ambiente sem ligação à base de dados).
+
+Ver docs/DEPLOY-SUPABASE-BASELINE.md para o procedimento completo,
+incluindo o que fazer se a base de dados de destino (ex: Supabase) já
+não estiver vazia.

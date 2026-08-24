@@ -1,0 +1,19 @@
+{
+  "name": "ao-market",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AO MARKET - Plataforma de comércio e marketplace para Angola (B2C/B2B)",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "install:all": "npm install",
+    "prisma:generate": "npm run prisma:generate --workspace=backend",
+    "prisma:migrate": "npm run prisma:migrate --workspace=backend",
+    "test:backend": "npm run test --workspace=backend"
+  },
+  "license": "UNLICENSED"
+}

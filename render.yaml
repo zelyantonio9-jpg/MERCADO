@@ -1,0 +1,93 @@
+# Configuração do Render para o AO MARKET (Blueprint / Infrastructure as Code).
+#
+# A base de dados está no Supabase (não no Render) — por isso este ficheiro
+# NÃO provisiona um Postgres gerido pelo Render. DATABASE_URL é preenchido
+# manualmente no dashboard com a connection string do Supabase (ver
+# instruções abaixo, "sync: false" faz o Render pedir o valor em vez de o
+# tentar gerar/ligar sozinho).
+#
+# Como usar:
+#   1. Faz commit deste ficheiro na raiz do repositório.
+#   2. No Render: New → Blueprint → seleciona este repositório.
+#   3. O Render cria os 2 serviços abaixo (backend, frontend).
+#   4. Preenche manualmente no dashboard (Environment) os valores marcados
+#      com "sync: false": DATABASE_URL (Supabase) e, depois do primeiro
+#      deploy, FRONTEND_URL/VITE_API_URL (domínios reais gerados pelo
+#      Render — só existem depois de os serviços serem criados).
+#
+# Onde ir buscar o DATABASE_URL no Supabase:
+#   Project Settings → Database → Connection string → separador "URI"
+#   → escolhe "Connection pooling: OFF" (ligação direta, porta 5432) —
+#   o Render corre um único processo persistente, não precisa do pgbouncer
+#   que o Supabase recomenda para ambientes serverless.
+#   Substitui [YOUR-PASSWORD] pela password da base de dados (Settings →
+#   Database → Database password — não é a tua password de login do Supabase).
+#
+# Se preferires configurar os serviços à mão no dashboard em vez de usar
+# Blueprint, usa este ficheiro como referência dos valores a colocar em
+# cada campo — a estrutura é a mesma.
+
+services:
+  # --- Backend (API) ---
+  - type: web
+    name: ao-market-backend
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: .
+    # "npm install" na raiz instala backend + frontend (workspaces) e
+    # dispara o postinstall do backend (prisma generate) automaticamente.
+    buildCommand: npm install
+    # prisma migrate deploy aplica as migrations pendentes antes de
+    # arrancar o servidor — é o comando de produção (não usar "migrate dev").
+    startCommand: npm start --workspace=backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Connection string do Supabase (ligação direta, porta 5432).
+      # sync: false = o Render não tenta preencher sozinho; pede-te o
+      # valor no dashboard depois de criar o serviço.
+      - key: DATABASE_URL
+        sync: false
+      # Gerados automaticamente pelo Render — strings aleatórias fortes,
+      # nunca precisas de as escrever à mão nem de as saber.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SOCIAL_SECURITY_ENCRYPTION_KEY
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 30d
+      - key: UPLOAD_MAX_SIZE_MB
+        value: "5"
+      - key: INSS_INTEGRATION_ENABLED
+        value: "false"
+      # PREENCHER DEPOIS DO PRIMEIRO DEPLOY com o domínio real do
+      # serviço "ao-market-frontend" abaixo (ex: https://ao-market-frontend.onrender.com).
+      # Sem isto o CORS bloqueia o frontend de falar com a API.
+      - key: FRONTEND_URL
+        value: https://CHANGE-ME-frontend-url.onrender.com
+
+  # --- Frontend (site estático, build do Vite) ---
+  - type: web
+    name: ao-market-frontend
+    runtime: static
+    plan: free
+    region: oregon
+    rootDir: .
+    buildCommand: npm install && npm run build --workspace=frontend
+    staticPublishPath: frontend/dist
+    envVars:
+      # PREENCHER DEPOIS DO PRIMEIRO DEPLOY com o domínio real do serviço
+      # "ao-market-backend" acima + "/api" (ex: https://ao-market-backend.onrender.com/api).
+      - key: VITE_API_URL
+        value: https://CHANGE-ME-backend-url.onrender.com/api
+    # Sem isto, recarregar a página em qualquer rota que não seja "/"
+    # (ex: /marketplace) dá 404 — o React Router é do lado do cliente,
+    # o servidor estático tem de devolver sempre index.html.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

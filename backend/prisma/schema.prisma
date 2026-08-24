@@ -1,0 +1,949 @@
+// AO MARKET — Schema inicial (Fase 1)
+// Base de dados: PostgreSQL
+// ORM: Prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================================================
+// ENUMS
+// ==================================================
+
+enum AccountType {
+  BUYER_INDIVIDUAL
+  BUYER_COMPANY
+  PRODUCER
+  TRANSPORTER
+  ADMIN
+  SUPPORT
+}
+
+enum AccountStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum BuyerType {
+  CONSUMIDOR_INDIVIDUAL
+  COMERCIANTE_REVENDEDOR
+  RESTAURANTE_HOTEL
+  SUPERMERCADO_LOJA
+  EMPRESA
+  INDUSTRIA
+  COOPERATIVA
+  INSTITUICAO
+  DISTRIBUIDOR_GROSSISTA
+  OUTRO
+}
+
+enum CompanyRole {
+  ADMINISTRADOR
+  COMPRADOR
+  FINANCEIRO
+  OPERADOR
+  RECECIONISTA
+}
+
+enum CompanyCapability {
+  COMPRAR
+  VENDER
+  TRANSPORTAR
+}
+
+enum OrderStatus {
+  CREATED
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum TransportStatus {
+  REQUESTED
+  ASSIGNED
+  ACCEPTED
+  PICKUP
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum DocumentType {
+  RECEIPT
+  DELIVERY_PROOF
+  IDENTITY
+  COMPANY_CERTIFICATE
+  VEHICLE_DOCUMENT
+  OTHER
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NOT_REQUIRED
+}
+
+// Refresh tokens são opacos (não JWT): um valor aleatório é devolvido ao
+// cliente num cookie httpOnly, e só o HASH dele é guardado aqui — mesmo
+// que a base de dados seja comprometida, o valor em si não é recuperável.
+// Cada refresh roda o token (o antigo é revogado, um novo é emitido);
+// reutilizar um token já revogado é tratado como sinal de roubo e revoga
+// toda a família (ver SocialSecurityService... não, ver auth.service.js).
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  familyId  String    // liga todos os tokens rodados a partir do mesmo login
+  expiresAt DateTime
+  revokedAt DateTime?
+  replacedByTokenHash String?
+  createdByIp String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+// --- Segurança Social (módulo INSS) ---
+// Estes estados representam o percurso de uma pessoa/empresa perante o
+// módulo, e nunca significam "verificado junto do INSS" por si só.
+enum SocialSecurityStatus {
+  NOT_REGISTERED       // utilizador ainda não respondeu/não aplicável
+  DECLARED              // utilizador declarou que está inscrito, sem prova
+  DOCUMENTS_PENDING     // aguarda envio de documentos
+  PENDING_VERIFICATION  // documentos enviados, aguarda análise
+  VERIFIED               // verificado (documental ou oficialmente — ver verificationLevel)
+  REJECTED
+  EXPIRED
+  SUSPENDED
+}
+
+// Distingue a NATUREZA da verificação — nunca mostrar "verificado junto do
+// INSS" a não ser que verificationLevel seja OFFICIAL_VERIFIED.
+enum SocialSecurityVerificationLevel {
+  DECLARED           // "Informação declarada" — nível 1
+  DOCUMENT_VERIFIED  // "Verificado documentalmente pelo AO MARKET" — nível 2
+  OFFICIAL_VERIFIED  // "Verificado junto do INSS" — nível 3, só com integração oficial
+}
+
+enum SocialSecurityDocumentStatus {
+  PENDING
+  UNDER_REVIEW
+  VALID
+  REJECTED
+  EXPIRED
+}
+
+enum SocialSecurityEventType {
+  USER_DECLARED
+  DOCUMENT_UPLOADED
+  DOCUMENT_VERIFICATION
+  DOCUMENT_REJECTED
+  DOCUMENT_EXPIRED
+  OFFICIAL_VERIFICATION
+  STATUS_CHANGED
+}
+
+// ==================================================
+// UTILIZADORES, PAPÉIS E PERMISSÕES (RBAC)
+// ==================================================
+
+model User {
+  id            String        @id @default(uuid())
+  fullName      String
+  email         String        @unique
+  phone         String?       @unique
+  passwordHash  String
+  accountType   AccountType
+  status        AccountStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+  photoUrl      String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  userRoles         UserRole[]
+  buyerProfile      BuyerProfile?
+  producerProfile   ProducerProfile?
+  transporterProfile TransporterProfile?
+  companyMemberships CompanyMembership[]
+
+  addresses         Address[]
+  carts             Cart[]
+  orders            Order[]           @relation("BuyerOrders")
+  favoriteProducts  FavoriteProduct[]
+  favoriteProducers FavoriteProducer[]
+  reviewsGiven      Review[]          @relation("ReviewAuthor")
+  documents         Document[]
+  notifications     Notification[]
+  supportTickets    SupportTicket[]
+  auditLogs         AuditLog[]
+  messages          Message[]
+  conversationParticipants ConversationParticipant[]
+
+  socialSecurityProfile SocialSecurityProfile?
+  refreshTokens         RefreshToken[]
+
+  @@index([accountType])
+  @@index([status])
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // ex: BUYER, PRODUCER, TRANSPORTER, COMPANY_ADMIN, ADMIN, SUPPORT
+  description String?
+  createdAt   DateTime @default(now())
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  key         String   @unique // ex: orders.create, buyer.profile.read
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+// ==================================================
+// PERFIS
+// ==================================================
+
+model BuyerProfile {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  buyerType       BuyerType @default(CONSUMIDOR_INDIVIDUAL)
+  biNumber        String?
+  nifNumber       String?
+  birthDate       DateTime?
+  preferredCategories String[] @default([])
+  priceRangeMin   Decimal?  @db.Decimal(12, 2)
+  priceRangeMax   Decimal?  @db.Decimal(12, 2)
+  purchaseFrequency String? // ex: semanal, mensal, ocasional
+  usualQuantity   String?
+  isPublicProfile Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  recurringPurchases RecurringPurchase[]
+
+  @@index([buyerType])
+}
+
+model ProducerProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  businessName String
+  nifNumber    String?
+  sector       String?
+  description  String?
+  isVerified   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products Product[]
+}
+
+model TransporterProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  operatingAreas String[] @default([])
+  isAvailable    Boolean  @default(true)
+  isVerified     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicles   Vehicle[]
+  assignments TransportAssignment[]
+}
+
+model Vehicle {
+  id            String   @id @default(uuid())
+  transporterId String
+  plate         String
+  type          String // ex: camião, carrinha, moto
+  capacityKg    Decimal? @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
+
+  transporter TransporterProfile @relation(fields: [transporterId], references: [id], onDelete: Cascade)
+
+  @@index([transporterId])
+}
+
+// ==================================================
+// EMPRESA
+// ==================================================
+
+model Company {
+  id              String   @id @default(uuid())
+  legalName       String
+  tradeName       String?
+  nif             String   @unique
+  sector          String?
+  phone           String?
+  email           String?
+  province        String?
+  municipality    String?
+  address         String?
+  legalRepName    String?
+  legalRepBi      String?
+  capabilities    CompanyCapability[] @default([])
+  approvalRules   Json? // regras configuráveis de aprovação (limites por valor)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  memberships CompanyMembership[]
+  orders      Order[]
+  purchaseApprovals PurchaseApproval[]
+
+  socialSecurityProfile SocialSecurityProfile?
+
+  @@index([nif])
+}
+
+model CompanyMembership {
+  id        String      @id @default(uuid())
+  companyId String
+  userId    String
+  role      CompanyRole
+  createdAt DateTime    @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([companyId])
+  @@index([userId])
+}
+
+// ==================================================
+// ENDEREÇOS
+// ==================================================
+
+model Address {
+  id                String   @id @default(uuid())
+  userId            String
+  label             String // Casa, Escritório, Loja, Armazém...
+  province          String
+  municipality      String
+  commune           String?
+  neighborhood      String?
+  street            String?
+  number            String?
+  referencePoint    String?
+  gpsLat            Decimal? @db.Decimal(10, 7)
+  gpsLng            Decimal? @db.Decimal(10, 7)
+  receiverName      String?
+  receiverPhone     String?
+  deliveryInstructions String?
+  isPrimary         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[] @relation("DeliveryAddress")
+
+  @@index([userId])
+}
+
+// ==================================================
+// CATÁLOGO
+// ==================================================
+
+model Category {
+  id       String     @id @default(uuid())
+  name     String     @unique
+  parentId String?
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  products Product[]
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  producerId  String
+  categoryId  String?
+  name        String
+  description String?
+  unit        String // kg, saco, unidade, litro...
+  price       Decimal  @db.Decimal(12, 2)
+  isActive    Boolean  @default(true)
+  province    String?
+  municipality String?
+  photos      String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  producer  ProducerProfile @relation(fields: [producerId], references: [id], onDelete: Cascade)
+  category  Category?       @relation(fields: [categoryId], references: [id])
+  inventory Inventory?
+  cartItems CartItem[]
+  orderItems OrderItem[]
+  favoritedBy FavoriteProduct[]
+  reviews   Review[]
+
+  @@index([producerId])
+  @@index([categoryId])
+  @@index([isActive])
+}
+
+model Inventory {
+  id        String   @id @default(uuid())
+  productId String   @unique
+  quantity  Decimal  @db.Decimal(12, 2)
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// ==================================================
+// CARRINHO
+// ==================================================
+
+model Cart {
+  id        String     @id @default(uuid())
+  // Um carrinho por utilizador — sem isto nada impedia duplicados, e a
+  // aplicação teria de escolher arbitrariamente qual usar em cada pedido.
+  userId    String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+}
+
+model CartItem {
+  id        String  @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Decimal @db.Decimal(12, 2)
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+}
+
+// ==================================================
+// PEDIDOS
+// ==================================================
+
+model Order {
+  id                String       @id @default(uuid())
+  buyerId           String
+  companyId         String?
+  deliveryAddressId String?
+  status            OrderStatus  @default(CREATED)
+  subtotal          Decimal      @db.Decimal(12, 2)
+  transportFee      Decimal      @default(0) @db.Decimal(12, 2)
+  fees              Decimal      @default(0) @db.Decimal(12, 2)
+  total             Decimal      @db.Decimal(12, 2)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  buyer           User      @relation("BuyerOrders", fields: [buyerId], references: [id])
+  company         Company?  @relation(fields: [companyId], references: [id])
+  deliveryAddress Address?  @relation("DeliveryAddress", fields: [deliveryAddressId], references: [id])
+
+  items           OrderItem[]
+  statusHistory   OrderStatusHistory[]
+  payment         Payment?
+  delivery        Delivery?
+  documents       Document[]
+  conversations   Conversation[]
+  reviews         Review[]
+  purchaseApproval PurchaseApproval?
+
+  @@index([buyerId])
+  @@index([companyId])
+  @@index([status])
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String
+  productId  String
+  quantity   Decimal @db.Decimal(12, 2)
+  unitPrice  Decimal @db.Decimal(12, 2)
+  subtotal   Decimal @db.Decimal(12, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String
+  status    OrderStatus
+  changedBy String? // userId de quem efetuou a transição
+  note      String?
+  createdAt DateTime    @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+// ==================================================
+// APROVAÇÃO EMPRESARIAL
+// ==================================================
+
+model PurchaseApproval {
+  id         String         @id @default(uuid())
+  orderId    String         @unique
+  companyId  String
+  status     ApprovalStatus @default(NOT_REQUIRED)
+  approverId String?
+  decidedAt  DateTime?
+  reason     String?
+  createdAt  DateTime       @default(now())
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([status])
+}
+
+// ==================================================
+// PAGAMENTOS
+// ==================================================
+
+model Payment {
+  id          String        @id @default(uuid())
+  orderId     String        @unique
+  provider    String? // nome do provedor (abstraído pelo PaymentService)
+  providerRef String? // referência externa da transação
+  status      PaymentStatus @default(PENDING)
+  amount      Decimal       @db.Decimal(12, 2)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+// ==================================================
+// TRANSPORTE E ENTREGA
+// ==================================================
+
+model Delivery {
+  id                String           @id @default(uuid())
+  orderId           String           @unique
+  transporterId     String?
+  status            TransportStatus  @default(REQUESTED)
+  originAddress     String?
+  destinationAddress String?
+  weightKg          Decimal?         @db.Decimal(10, 2)
+  volumeM3          Decimal?         @db.Decimal(10, 2)
+  cargoType         String?
+  scheduledAt       DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  order       Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  assignment  TransportAssignment?
+  proofs      DeliveryProof[]
+
+  @@index([status])
+}
+
+model TransportAssignment {
+  id            String   @id @default(uuid())
+  deliveryId    String   @unique
+  transporterId String
+  vehicleId     String?
+  assignedAt    DateTime @default(now())
+  acceptedAt    DateTime?
+
+  delivery    Delivery            @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  transporter TransporterProfile  @relation(fields: [transporterId], references: [id])
+
+  @@index([transporterId])
+}
+
+model DeliveryProof {
+  id         String   @id @default(uuid())
+  deliveryId String
+  photoUrl   String?
+  signature  String?
+  note       String?
+  createdAt  DateTime @default(now())
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId])
+}
+
+// ==================================================
+// DOCUMENTOS
+// ==================================================
+
+model Document {
+  id        String       @id @default(uuid())
+  userId    String
+  orderId   String?
+  type      DocumentType
+  fileUrl   String
+  createdAt DateTime     @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id])
+
+  @@index([userId])
+  @@index([orderId])
+}
+
+// ==================================================
+// CHAT
+// ==================================================
+
+model Conversation {
+  id        String   @id @default(uuid())
+  orderId   String?
+  createdAt DateTime @default(now())
+
+  order        Order?                     @relation(fields: [orderId], references: [id])
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([orderId])
+}
+
+model ConversationParticipant {
+  conversationId String
+  userId         String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderId       String
+  content        String
+  flaggedForReview Boolean @default(false)
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId])
+}
+
+// ==================================================
+// AVALIAÇÕES E FAVORITOS
+// ==================================================
+
+model Review {
+  id           String   @id @default(uuid())
+  orderId      String
+  authorId     String
+  targetUserId String? // produtor ou transportador avaliado
+  productId    String?
+  rating       Int // 1 a 5
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  author  User     @relation("ReviewAuthor", fields: [authorId], references: [id])
+  product Product? @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([targetUserId])
+}
+
+model FavoriteProduct {
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([userId, productId])
+}
+
+model FavoriteProducer {
+  userId     String
+  producerId String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, producerId])
+}
+
+// ==================================================
+// COMPRAS RECORRENTES
+// ==================================================
+
+model RecurringPurchase {
+  id               String   @id @default(uuid())
+  buyerProfileId   String
+  productId        String
+  quantity         Decimal  @db.Decimal(12, 2)
+  frequency        String // ex: semanal, quinzenal, mensal
+  preferredWeekday String?
+  deliveryAddressId String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  buyerProfile BuyerProfile @relation(fields: [buyerProfileId], references: [id], onDelete: Cascade)
+
+  @@index([buyerProfileId])
+}
+
+// ==================================================
+// NOTIFICAÇÕES
+// ==================================================
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  channel   NotificationChannel @default(IN_APP)
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([readAt])
+}
+
+// ==================================================
+// SUPORTE
+// ==================================================
+
+model SupportTicket {
+  id        String   @id @default(uuid())
+  userId    String
+  subject   String
+  message   String
+  status    String   @default("OPEN") // OPEN, IN_PROGRESS, CLOSED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ==================================================
+// SEGURANÇA SOCIAL (MÓDULO INSS)
+// ==================================================
+// O AO MARKET não é o INSS: este módulo recolhe dados autorizados, organiza
+// documentação e regista o estado de verificação. "VERIFIED" com
+// verificationLevel = OFFICIAL_VERIFIED só pode resultar de uma integração
+// oficial futura (ver INSSProvider, docs/INSS-INTEGRATION.md). Enquanto essa
+// integração não existir, o nível máximo alcançável é DOCUMENT_VERIFIED.
+//
+// O perfil pertence a um User (produtor, trabalhador por conta própria,
+// transportador, trabalhador de empresa) OU a uma Company (contribuinte),
+// nunca aos dois — validado na camada de serviço (Prisma não impõe XOR
+// nativamente; a migration adiciona um CHECK constraint em SQL puro).
+
+model SocialSecurityProfile {
+  id     String @id @default(uuid())
+  userId String? @unique
+  companyId String? @unique
+
+  // NISS nunca é guardado em texto simples: nissEncrypted é cifrado
+  // (AES-256-GCM) e nissLast4 guarda apenas os últimos dígitos para
+  // permitir exibição mascarada sem decifrar em cada pedido.
+  nissEncrypted String?
+  nissLast4     String?
+
+  // Resposta a "Está inscrito no INSS?": true = sim, false = não,
+  // null = "não sei" / "prefiro informar mais tarde".
+  declaredEnrolled Boolean?
+
+  // Categoria/regime e atividade — texto livre e configurável.
+  // Não codificar aqui requisitos legais específicos.
+  category String?
+  activity String?
+
+  status            SocialSecurityStatus            @default(NOT_REGISTERED)
+  verificationLevel SocialSecurityVerificationLevel?
+  lastVerifiedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  documents     SocialSecurityDocument[]
+  verifications SocialSecurityVerification[]
+  events        SocialSecurityVerificationEvent[]
+
+  @@index([status])
+  @@index([verificationLevel])
+}
+
+model SocialSecurityDocument {
+  id        String @id @default(uuid())
+  profileId String
+
+  // Tipo de documento — texto configurável (ex: "declaracao_inss",
+  // "comprovativo_contribuicoes"), definido fora do código para poder
+  // ser atualizado conforme orientação oficial do INSS sem deploy.
+  type   String
+  fileUrl String
+
+  issuedAt   DateTime?
+  validUntil DateTime?
+
+  status SocialSecurityDocumentStatus @default(PENDING)
+
+  uploadedBy String // userId de quem carregou o documento
+
+  // Só preenchido por uma verificação documental (nível 2). O utilizador
+  // nunca pode escrever diretamente nestes campos.
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  rejectionReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile SocialSecurityProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([status])
+  @@index([validUntil])
+}
+
+// Registo formal de cada verificação executada (nível 2 documental ou
+// nível 3 oficial). Distinto do log de eventos: aqui só entram decisões
+// reais de verificação, não qualquer interação.
+model SocialSecurityVerification {
+  id        String @id @default(uuid())
+  profileId String
+
+  level  SocialSecurityVerificationLevel
+  result SocialSecurityStatus // tipicamente VERIFIED ou REJECTED
+
+  // null quando o resultado vier de um provider oficial automático;
+  // preenchido com o userId do operador quando for verificação manual.
+  performedBy String?
+
+  // Identifica a origem: "MANUAL" (operador AO MARKET) ou o nome do
+  // provider oficial quando existir (ex: "INSS_OFFICIAL").
+  provider String
+  reason   String?
+
+  createdAt DateTime @default(now())
+
+  profile SocialSecurityProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+// Histórico detalhado de todos os eventos do módulo (declaração, upload,
+// verificação, rejeição, expiração, mudança de estado) — complementa o
+// AuditLog genérico com o contexto específico deste domínio.
+model SocialSecurityVerificationEvent {
+  id        String @id @default(uuid())
+  profileId String
+
+  eventType SocialSecurityEventType
+  actorId   String? // userId de quem despoletou o evento; null se automático
+  metadata  Json?   // nunca deve conter o NISS em texto simples
+
+  createdAt DateTime @default(now())
+
+  profile SocialSecurityProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([eventType])
+}
+
+// ==================================================
+// AUDITORIA
+// ==================================================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity, entityId])
+}
